@@ -6,7 +6,7 @@ services:
     dockerfilePath: ./docker/render.Dockerfile
     repo: https://github.com/langflow-ai/langflow
     branch: main
-    plan: standard
+    plan: starter
     healthCheckPath: /health_check
     autoDeploy: false
     envVars:
