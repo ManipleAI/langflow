@@ -19,6 +19,7 @@ from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from lfx.base.data.utils import extract_text_from_bytes
 from lfx.base.models.unified_models import get_embedding_model_options
+from lfx.base.vectorstores.chroma_security import chroma_langchain_collection_kwargs
 from lfx.components.models_and_agents.embedding_model import EmbeddingModelComponent
 from lfx.log import logger
 
@@ -114,7 +115,7 @@ class KBStorageHelper:
             has_data = any((kb_path / m).exists() for m in ["chroma", "chroma.sqlite3", "index"])
             if has_data:
                 client = KBStorageHelper.get_fresh_chroma_client(kb_path)
-                chroma = Chroma(client=client, collection_name=kb_name)
+                chroma = Chroma(client=client, collection_name=kb_name, **chroma_langchain_collection_kwargs())
                 with contextlib.suppress(Exception):
                     chroma.delete_collection()
                 chroma = None
@@ -215,8 +216,13 @@ class KBAnalysisHelper:
 
         missing_keys = not all(k in metadata for k in defaults)
         has_unknowns = metadata.get("embedding_provider") == "Unknown" or metadata.get("embedding_model") == "Unknown"
+        # Detect stale zero-chunk metadata: the file claims 0 chunks but
+        # Chroma data exists on disk, meaning data was ingested without updating
+        # the metrics (e.g. via the KnowledgeIngestionComponent before the fix).
+        has_chroma_data = any((kb_path / m).exists() for m in ["chroma", "chroma.sqlite3", "index"])
+        stale_chunks = metadata.get("chunks", 0) == 0 and has_chroma_data
 
-        if fast and not missing_keys:
+        if fast and not missing_keys and not stale_chunks:
             return metadata
 
         backfill_needed = not metadata_file.exists() or missing_keys or (not fast and has_unknowns)
@@ -237,6 +243,15 @@ class KBAnalysisHelper:
             except (OSError, ValueError, TypeError, json.JSONDecodeError) as e:
                 logger.debug(f"Metadata backfill failed for {kb_path}: {e}")
 
+        # Recount metrics from Chroma if metadata claims 0 chunks but data exists
+        if stale_chunks:
+            try:
+                KBAnalysisHelper.update_text_metrics(kb_path, metadata)
+                metadata["size"] = KBStorageHelper.get_directory_size(kb_path)
+                metadata_file.write_text(json.dumps(metadata, indent=2))
+            except (OSError, ValueError, TypeError, json.JSONDecodeError, chromadb.errors.ChromaError) as e:
+                logger.debug(f"Stale metrics recount failed for {kb_path}: {e}")
+
         return metadata
 
     @staticmethod
@@ -247,7 +262,7 @@ class KBAnalysisHelper:
         try:
             if created_locally:
                 client = KBStorageHelper.get_fresh_chroma_client(kb_path)
-                chroma = Chroma(client=client, collection_name=kb_path.name)
+                chroma = Chroma(client=client, collection_name=kb_path.name, **chroma_langchain_collection_kwargs())
 
             if chroma is None:
                 return
@@ -438,6 +453,7 @@ class KBIngestionHelper:
                 client=client,
                 embedding_function=embeddings,
                 collection_name=kb_name,
+                **chroma_langchain_collection_kwargs(),
             )
 
             job_id_str = str(task_job_id)
@@ -530,6 +546,7 @@ class KBIngestionHelper:
             chroma = Chroma(
                 client=client,
                 collection_name=kb_name,
+                **chroma_langchain_collection_kwargs(),
             )
             await chroma.adelete(where={"job_id": str(job_id)})
             await logger.ainfo(f"Cleaned up chunks for job {job_id} in knowledge base '{kb_name}'")
@@ -561,5 +578,4 @@ class KBIngestionHelper:
                 raise ValueError(msg)
 
         embedding_model = EmbeddingModelComponent(model=[selected_option], _user_id=current_user.id)
-        embeddings_with_models = embedding_model.build_embeddings()
-        return embeddings_with_models.embeddings
+        return embedding_model.build_embeddings()

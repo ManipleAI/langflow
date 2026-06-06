@@ -1,6 +1,5 @@
 import importlib
 import signal
-import sys
 import traceback
 from contextlib import suppress
 from functools import lru_cache
@@ -224,6 +223,10 @@ def _get_cached_converter(
     return DocumentConverter(format_options=format_options)
 
 
+class _ShutdownRequestedError(Exception):
+    """Raised by check_shutdown() to unwind the docling_worker call stack."""
+
+
 def docling_worker(
     *,
     file_paths: list[str],
@@ -252,22 +255,24 @@ def docling_worker(
         logger.debug(f"Docling worker received {signal_name}, initiating graceful shutdown...")
         shutdown_requested = True
 
-        # Send shutdown notification to parent process
+        # Send shutdown notification to parent thread
         with suppress(Exception):
             queue.put({"error": f"Worker interrupted by {signal_name}", "shutdown": True})
 
-        # Exit gracefully
-        sys.exit(0)
+        # NOTE: Do NOT call sys.exit() here. This function runs in a thread
+        # (not a subprocess), so sys.exit() would raise SystemExit which can
+        # crash the host process in single-worker setups. Instead, just set
+        # the flag and let check_shutdown() terminate the worker loop.
 
     def check_shutdown() -> None:
-        """Check if shutdown was requested and exit if so."""
+        """Check if shutdown was requested and raise to unwind if so."""
         if shutdown_requested:
             logger.info("Shutdown requested, exiting worker...")
 
             with suppress(Exception):
                 queue.put({"error": "Worker shutdown requested", "shutdown": True})
 
-            sys.exit(0)
+            raise _ShutdownRequestedError
 
     # Register signal handlers early
     try:
@@ -287,7 +292,6 @@ def docling_worker(
         from docling.document_converter import DocumentConverter, FormatOption, PdfFormatOption  # noqa: F401
         from docling.models.factories import get_ocr_factory  # noqa: F401
         from docling.pipeline.vlm_pipeline import VlmPipeline  # noqa: F401
-        from langchain_docling.picture_description import PictureDescriptionLangChainOptions  # noqa: F401
 
         # Check for shutdown after imports
         check_shutdown()
@@ -327,7 +331,6 @@ def docling_worker(
             from docling.datamodel.pipeline_options import PdfPipelineOptions
             from docling.document_converter import DocumentConverter, FormatOption, PdfFormatOption
             from docling.models.factories import get_ocr_factory
-            from langchain_docling.picture_description import PictureDescriptionLangChainOptions
 
             pipeline_options = PdfPipelineOptions()
             pipeline_options.do_ocr = ocr_engine not in {"", "None"}
@@ -337,6 +340,14 @@ def docling_worker(
                 pipeline_options.ocr_options = ocr_options
 
             pipeline_options.do_picture_classification = do_picture_classification
+            try:
+                from langchain_docling.picture_description import PictureDescriptionLangChainOptions
+            except ImportError as e:
+                msg = (
+                    "langchain-docling is not installed. Please install it with `pip install langchain-docling` "
+                    "or `pip install 'langflow[docling-image-description]'`."
+                )
+                raise ImportError(msg) from e
             pic_desc_llm = _deserialize_pydantic_model(pic_desc_config)
             logger.info("Docling enabling the picture description stage.")
             pipeline_options.do_picture_description = True
@@ -442,6 +453,9 @@ def docling_worker(
         logger.info(f"Successfully processed {len([d for d in processed_data if d])} files")
         queue.put(processed_data)
 
+    except _ShutdownRequestedError:
+        logger.info("Docling worker stopped by shutdown request")
+        return
     except KeyboardInterrupt:
         logger.warning("KeyboardInterrupt during processing, exiting gracefully...")
         queue.put({"error": "Worker interrupted during processing", "shutdown": True})

@@ -4,6 +4,16 @@ import sys
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
+
+try:
+    import ibm_watsonx_ai  # noqa: F401
+    import langchain_ibm  # noqa: F401
+except ImportError:
+    # langchain-ibm and ibm-watsonx-ai are gated to python_version<'3.14' in
+    # pyproject.toml because upstream pins exclude 3.14. Skip these tests on
+    # 3.14 until upstream adapts.
+    pytest.skip("langchain-ibm / ibm-watsonx-ai not available", allow_module_level=True)
+
 from lfx.schema.dotdict import dotdict
 
 # Mock the required modules before importing the component
@@ -83,13 +93,18 @@ class TestWatsonxEmbeddingsComponent:
         """Test that URL options are defined."""
         url_input = next(inp for inp in wx_embeddings_component.inputs if inp.name == "url")
 
-        assert "https://us-south.ml.cloud.ibm.com" in url_input.options
-        assert "https://eu-de.ml.cloud.ibm.com" in url_input.options
-        assert "https://eu-gb.ml.cloud.ibm.com" in url_input.options
-        assert "https://au-syd.ml.cloud.ibm.com" in url_input.options
-        assert "https://jp-tok.ml.cloud.ibm.com" in url_input.options
-        assert "https://ca-tor.ml.cloud.ibm.com" in url_input.options
-        assert "https://ap-south-1.aws.wxai.ibm.com" in url_input.options
+        expected_urls = [
+            "https://us-south.ml.cloud.ibm.com",
+            "https://eu-de.ml.cloud.ibm.com",
+            "https://eu-gb.ml.cloud.ibm.com",
+            "https://au-syd.ml.cloud.ibm.com",
+            "https://jp-tok.ml.cloud.ibm.com",
+            "https://ca-tor.ml.cloud.ibm.com",
+            "https://ap-south-1.aws.wxai.ibm.com",
+        ]
+
+        for url in expected_urls:
+            assert url in url_input.options, f"Expected URL {url} not found in options"
 
     @patch("lfx.base.models.model_utils.requests.get")
     def test_fetch_models_success(self, mock_get, mock_response):
