@@ -9,6 +9,7 @@ import {
   type SidebarSection,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { ENABLE_ENVIRONMENTS } from "@/customization/feature-flags";
 import { usePlaygroundStore } from "@/stores/playgroundStore";
 import { cn } from "@/utils/utils";
 import { useSearchContext } from "../index";
@@ -65,6 +66,16 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Traces",
     tooltip: "Traces",
   },
+  ...(ENABLE_ENVIRONMENTS
+    ? [
+        {
+          id: "environments" as SidebarSection,
+          icon: "Rocket",
+          label: "Environments",
+          tooltip: "Environments & Promotion",
+        },
+      ]
+    : []),
 ];
 
 const SidebarSegmentedNav = () => {

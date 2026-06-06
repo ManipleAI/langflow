@@ -1,6 +1,6 @@
-import React, {
+import {
   type Dispatch,
-  ReactNode,
+  type ReactNode,
   type SetStateAction,
   useState,
 } from "react";
@@ -17,11 +17,16 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { usePatchUpdateFlow } from "@/controllers/API/queries/flows/use-patch-update-flow";
 import { CustomLink } from "@/customization/components/custom-link";
-import { ENABLE_PUBLISH, ENABLE_WIDGET } from "@/customization/feature-flags";
+import {
+  ENABLE_ENVIRONMENTS,
+  ENABLE_PUBLISH,
+  ENABLE_WIDGET,
+} from "@/customization/feature-flags";
 import { customMcpOpen } from "@/customization/utils/custom-mcp-open";
 import ApiModal from "@/modals/apiModal";
 import EmbedModal from "@/modals/EmbedModal/embed-modal";
 import ExportModal from "@/modals/exportModal";
+import PromoteModal from "@/modals/promoteModal";
 import useAlertStore from "@/stores/alertStore";
 import useAuthStore from "@/stores/authStore";
 import useFlowStore from "@/stores/flowStore";
@@ -55,6 +60,7 @@ export default function PublishDropdown({
   const hasIO = useFlowStore((state) => state.hasIO);
   const isAuth = useAuthStore((state) => !!state.autoLogin);
   const [openExportModal, setOpenExportModal] = useState(false);
+  const [openPromoteModal, setOpenPromoteModal] = useState(false);
 
   const handlePublishedSwitch = async (checked: boolean) => {
     mutateAsync(
@@ -127,6 +133,16 @@ export default function PublishDropdown({
             <IconComponent name="Download" className={`icon-size mr-2`} />
             <span>Export</span>
           </DropdownMenuItem>
+          {ENABLE_ENVIRONMENTS && (
+            <DropdownMenuItem
+              className="deploy-dropdown-item group"
+              onClick={() => setOpenPromoteModal(true)}
+              data-testid="promote-flow-item"
+            >
+              <IconComponent name="Rocket" className={`icon-size mr-2`} />
+              <span>Promote</span>
+            </DropdownMenuItem>
+          )}
           <CustomLink
             className={cn("flex-1")}
             to={`/mcp/folder/${folderId}`}
@@ -229,6 +245,14 @@ export default function PublishDropdown({
         activeTweaks={false}
       ></EmbedModal>
       <ExportModal open={openExportModal} setOpen={setOpenExportModal} />
+      {ENABLE_ENVIRONMENTS && (
+        <PromoteModal
+          open={openPromoteModal}
+          setOpen={setOpenPromoteModal}
+          flowId={flowId ?? ""}
+          flowName={flowName ?? ""}
+        />
+      )}
     </>
   );
 }

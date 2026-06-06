@@ -23,6 +23,7 @@ import {
 import SkeletonGroup from "@/components/ui/skeletonGroup";
 import { useGetMCPServers } from "@/controllers/API/queries/mcp/use-get-mcp-servers";
 import {
+  ENABLE_ENVIRONMENTS,
   ENABLE_KNOWLEDGE_BASES,
   ENABLE_NEW_SIDEBAR,
 } from "@/customization/feature-flags";
@@ -40,6 +41,7 @@ import { useTypesStore } from "../../../../stores/typesStore";
 import type { APIClassType } from "../../../../types/api";
 import isWrappedWithClass from "../PageComponent/utils/is-wrapped-with-class";
 import { CategoryGroup } from "./components/categoryGroup";
+import EnvironmentsPanel from "./components/EnvironmentsSidebar";
 import NoResultsMessage from "./components/emptySearchComponent";
 import FlowVersionSidebarContent from "./components/FlowVersionSidebarContent";
 import McpSidebarGroup from "./components/McpSidebarGroup";
@@ -252,6 +254,7 @@ export function FlowSidebarComponent({ isLoading }: FlowSidebarComponentProps) {
   }, [search, debouncedSetSearch]);
 
   // State
+  // biome-ignore lint/suspicious/noExplicitAny: pre-existing fuse.js search index generic
   const [fuse, setFuse] = useState<Fuse<any> | null>(null);
   const [openCategories, setOpenCategories] = useState<string[]>([]);
   const [showConfig, setShowConfig] = useState(false);
@@ -268,6 +271,7 @@ export function FlowSidebarComponent({ isLoading }: FlowSidebarComponentProps) {
     setShowLegacy(value);
     setLocalStorage("showLegacy", value.toString());
   }, []);
+  // biome-ignore lint/suspicious/noExplicitAny: pre-existing dynamic MCP search data shape
   const [mcpSearchData, setMcpSearchData] = useState<any[]>([]);
 
   // Create base data that includes MCP category when available
@@ -293,6 +297,7 @@ export function FlowSidebarComponent({ isLoading }: FlowSidebarComponentProps) {
         },
       }));
 
+      // biome-ignore lint/suspicious/noExplicitAny: pre-existing dynamic MCP category map
       const mcpCategoryData: Record<string, any> = {};
       newMcpSearchData.forEach((mcp) => {
         mcpCategoryData[mcp.display_name] = mcp;
@@ -541,6 +546,7 @@ export function FlowSidebarComponent({ isLoading }: FlowSidebarComponentProps) {
 
   const onDragStart = useCallback(
     (
+      // biome-ignore lint/suspicious/noExplicitAny: pre-existing drag event generic
       event: React.DragEvent<any>,
       data: { type: string; node?: APIClassType },
     ) => {
@@ -597,6 +603,12 @@ export function FlowSidebarComponent({ isLoading }: FlowSidebarComponentProps) {
     });
   const showVersions =
     ENABLE_NEW_SIDEBAR && activeSection === "versions" && sidebarOpen;
+
+  const showEnvironments =
+    ENABLE_NEW_SIDEBAR &&
+    ENABLE_ENVIRONMENTS &&
+    activeSection === "environments" &&
+    sidebarOpen;
 
   const currentFlowForVersions = useFlowStore((state) => state.currentFlow);
 
@@ -703,7 +715,12 @@ export function FlowSidebarComponent({ isLoading }: FlowSidebarComponentProps) {
               "opacity-0 -translate-x-1 pointer-events-none",
           )}
         >
-          {showVersions && currentFlowForVersions?.id ? (
+          {showEnvironments && currentFlowForVersions?.id ? (
+            <EnvironmentsPanel
+              flowId={currentFlowForVersions.id}
+              flowName={currentFlowForVersions.name ?? ""}
+            />
+          ) : showVersions && currentFlowForVersions?.id ? (
             <FlowVersionSidebarContent flowId={currentFlowForVersions.id} />
           ) : (
             <>
